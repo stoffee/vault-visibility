@@ -1,0 +1,74 @@
+# Ansible
+*.retry
+ansible/*.retry
+ansible/inventory/*
+!ansible/inventory/example
+ansible/**/*.vault
+ansible/**/*vault.yml
+*.log
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+.terraformrc
+terraform.rc
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.lock.hcl
+*tfplan*
+
+# Grafana
+grafana/data/*
+grafana/logs/*
+grafana/plugins/*
+grafana/provisioning/datasources/*
+!grafana/provisioning/datasources/example
+grafana/sessions/
+
+# Prometheus
+prometheus/data/
+prometheus/wal/
+prometheus_data_*
+
+# General
+*.env
+*.env.*
+!.env.example
+.DS_Store
+*.pem
+*.key
+*.crt
+*.csr
+*.srl
+.vscode/
+.idea/
+*.swp
+*.swo
+tmp/
+temp/
+.tmp/
+.temp/
+
+# Dependency directories
+node_modules/
+vendor/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
