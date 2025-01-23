@@ -1,0 +1,156 @@
+---
+- name: Deploy Vault Monitoring Stack
+  hosts: localhost
+  become: true
+  vars_prompt:
+    - name: vault_addr
+      prompt: "Enter Vault address (e.g., http://vault.example.com:8200)"
+      private: no
+    - name: vault_token
+      prompt: "Enter Vault token"
+      private: yes
+
+  tasks:
+    - name: Create required directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+        owner: "472"
+        group: "472"
+        recurse: yes
+      loop:
+        - /etc/prometheus
+        - /etc/grafana
+        - /etc/grafana/provisioning/dashboards
+        - /etc/grafana/provisioning/datasources
+        - /etc/grafana/dashboards
+        - /var/lib/grafana
+        - /var/log/grafana
+        - /var/lib/grafana/plugins
+
+    - name: Create Grafana config
+      copy:
+        content: |
+          [paths]
+          data = /var/lib/grafana
+          logs = /var/log/grafana
+          plugins = /var/lib/grafana/plugins
+          provisioning = /etc/grafana/provisioning
+
+          [server]
+          http_port = 3000
+
+          [security]
+          admin_password = admin
+          allow_sign_up = false
+
+          [plugins]
+          allow_loading_unsigned_plugins = marcusolsson-json-datasource,yesoreyeram-infinity-datasource
+        dest: "/etc/grafana/grafana.ini"
+        mode: '0644'
+        owner: "472"
+        group: "472"
+
+    - name: Create Prometheus configuration
+      copy:
+        content: |
+          global:
+            scrape_interval: 15s
+            evaluation_interval: 15s
+
+          scrape_configs:
+            - job_name: 'vault'
+              metrics_path: '/v1/sys/metrics'
+              params:
+                format: ['prometheus']
+              bearer_token: '{{ vault_token }}'
+              static_configs:
+                - targets: ['{{ vault_addr | urlsplit("hostname") }}:{{ vault_addr | urlsplit("port") }}']
+              tls_config:
+                insecure_skip_verify: true
+        dest: "/etc/prometheus/prometheus.yml"
+        mode: '0644'
+
+    - name: Create Grafana datasource configuration
+      copy:
+        content: |
+          apiVersion: 1
+          datasources:
+            - name: Prometheus
+              type: prometheus
+              access: proxy
+              url: http://prometheus:9090
+              isDefault: true
+        dest: "/etc/grafana/provisioning/datasources/prometheus.yml"
+        mode: '0644'
+        owner: "472"
+        group: "472"
+
+    - name: Create Grafana Dashboard provisioning config
+      copy:
+        content: |
+          apiVersion: 1
+          providers:
+            - name: 'default'
+              orgId: 1
+              folder: ''
+              folderUid: ''
+              type: file
+              disableDeletion: false
+              editable: true
+              updateIntervalSeconds: 10
+              allowUiUpdates: false
+              options:
+                path: /etc/grafana/dashboards
+                foldersFromFilesStructure: true
+        dest: "/etc/grafana/provisioning/dashboards/default.yml"
+        mode: '0644'
+        owner: "472"
+        group: "472"
+
+    - name: Save Vault dashboard JSON
+      copy:
+        content: |
+          {{ vault_dashboard_json }}
+        dest: "/etc/grafana/dashboards/vault-dashboard.json"
+        mode: '0644'
+        owner: "472"
+        group: "472"
+      vars:
+        vault_dashboard_json: "{{ lookup('file', 'vault.grafana.json') }}"
+
+    - name: Create Docker network
+      command: docker network create monitoring
+      ignore_errors: yes
+
+    - name: Start Prometheus container
+      shell: |
+        docker stop prometheus || true
+        docker rm prometheus || true
+        docker run -d --name prometheus \
+          --network monitoring \
+          -v /etc/prometheus:/etc/prometheus:Z \
+          -p 9090:9090 \
+          prom/prometheus:latest \
+          --config.file=/etc/prometheus/prometheus.yml
+
+    - name: Start Grafana container
+      shell: |
+        docker stop grafana || true
+        docker rm grafana || true
+        docker run -d --name grafana \
+          --network monitoring \
+          -v /etc/grafana:/etc/grafana:Z \
+          -v /var/lib/grafana:/var/lib/grafana:Z \
+          -v /var/log/grafana:/var/log/grafana:Z \
+          -p 3000:3000 \
+          -e "GF_INSTALL_PLUGINS=marcusolsson-json-datasource,yesoreyeram-infinity-datasource" \
+          grafana/grafana:latest
+
+    - name: Print access information
+      debug:
+        msg: |
+          Deployment complete! You can access:
+          - Grafana: http://SERVER_IP:3000 (admin/admin)
+          - Prometheus: http://SERVER_IP:9090
